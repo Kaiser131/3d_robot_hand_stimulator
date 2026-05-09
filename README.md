@@ -44,6 +44,7 @@ Camera:
 
 Misc:
 - Reset arm pose: `X`
+- Toggle instructions overlay: `I`
 - Quit: `Esc`
 
 ## Notes

@@ -5,6 +5,9 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <string>
+#include <vector>
+#include <algorithm>
 
 #include <GL/glut.h>
 #include <GL/glu.h>
@@ -23,6 +26,8 @@ static InputState gInput;
 static RobotArm gArm;
 static SceneObject gObject;
 
+static bool gShowInstructions = false;
+
 static std::chrono::steady_clock::time_point gPrevTime;
 
 static void setupGL();
@@ -38,6 +43,7 @@ static void mouseMotion(int x, int y);
 
 static void drawGround();
 static void updatePickup();
+static void drawInstructionsOverlay();
 
 static float distancePointToAabb(const math::Vec3& p, const math::Vec3& center, const math::Vec3& halfExtents) {
     // Computes distance from point p to an axis-aligned box centered at center with halfExtents.
@@ -183,7 +189,74 @@ static void display() {
     // Object
     drawSceneObject(gObject);
 
+    if (gShowInstructions) {
+        drawInstructionsOverlay();
+    }
+
     glutSwapBuffers();
+}
+
+static void drawBitmapText(float x, float y, const std::string& text) {
+    glRasterPos2f(x, y);
+    for (unsigned char c : text) {
+        glutBitmapCharacter(GLUT_BITMAP_9_BY_15, c);
+    }
+}
+
+static void drawInstructionsOverlay() {
+    // 2D overlay in screen space.
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    gluOrtho2D(0.0, (double)gWindowWidth, 0.0, (double)gWindowHeight);
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    glDisable(GL_LIGHTING);
+    glDisable(GL_DEPTH_TEST);
+
+    // Text color
+    glColor3f(0.92f, 0.92f, 0.92f);
+
+    const float startX = 18.0f;
+    float y = (float)gWindowHeight - 26.0f;
+    const float lineH = 18.0f;
+
+    const std::vector<std::string> lines = {
+        "Controls (press I to hide)",
+        "", 
+        "Robot joints:",
+        "  Base yaw:      A / D",
+        "  Shoulder:      W / S",
+        "  Elbow:         Q / E",
+        "  Wrist roll:    R / F",
+        "  Gripper:       T (open) / G (close)",
+        "", 
+        "Camera:",
+        "  Orbit:         Arrow keys",
+        "  Orbit (mouse): Right mouse drag",
+        "  Zoom:          + / -",
+        "  Reset view:    C",
+        "", 
+        "Misc:",
+        "  Reset pose:    X",
+        "  Off / Quit:    Esc"
+    };
+
+    for (const auto& line : lines) {
+        drawBitmapText(startX, y, line);
+        y -= lineH;
+    }
+
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_LIGHTING);
+
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
 }
 
 static void updatePickup() {
@@ -209,12 +282,21 @@ static void updatePickup() {
             math::Mat4 invTip = math::Mat4::inverseRigidBody(tipWorld);
             gObject.heldOffset = invTip * gObject.worldFromObject;
             gObject.held = true;
+
+            // Visual: when we successfully grab something, show the parallel "| |" pose.
+            // Users can keep squeezing (key 'G') to go past the limit into the crossed "X" pose.
+            gArm.gripperOpen = 0.0f;
         }
     } else {
         // Release on opening.
         const bool isOpening = (gInput.isDown('t') || gInput.isDown('T'));
         if (isOpening || gArm.gripperOpen >= releaseThresholdDeg) {
             gObject.held = false;
+
+            // Default state is open "V".
+            // Keep it at least slightly open after release, but don't force-close
+            // if the user already opened wider.
+            gArm.gripperOpen = std::max(gArm.gripperOpen, 35.0f);
         }
     }
 
@@ -248,6 +330,10 @@ static void idle() {
 
 static void keyboardDown(unsigned char key, int, int) {
     gInput.setKeyDown(key, true);
+
+    if (key == 'i' || key == 'I') {
+        gShowInstructions = !gShowInstructions;
+    }
 
     if (key == 27) {
         std::exit(0);

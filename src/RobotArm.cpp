@@ -9,6 +9,78 @@
 #include <GL/glut.h>
 #include <GL/glu.h>
 
+static float computeArmMinCenterY(const RobotArm& arm) {
+    using namespace math;
+
+    float minY = 1e9f;
+
+    auto consider = [&](const Vec3& p) {
+        if (p.y < minY) minY = p.y;
+    };
+
+    Mat4 m = Mat4::identity();
+
+    // base at origin
+    m = m * Mat4::rotationY(arm.baseYaw);
+    m = m * Mat4::translation({0.0f, arm.baseHeight, 0.0f});
+
+    // Shoulder
+    Mat4 shoulder = m * Mat4::rotationZ(arm.shoulderPitch);
+    consider(m.transformPoint({0.0f, 0.0f, 0.0f}));                 // shoulder pivot center
+    consider(shoulder.transformPoint({arm.upperLen * 0.33f, 0, 0}));
+    consider(shoulder.transformPoint({arm.upperLen * 0.66f, 0, 0}));
+
+    // Elbow
+    Mat4 elbowBase = shoulder * Mat4::translation({arm.upperLen, 0.0f, 0.0f});
+    consider(elbowBase.transformPoint({0.0f, 0.0f, 0.0f}));
+    Mat4 elbow = elbowBase * Mat4::rotationZ(arm.elbowPitch);
+    consider(elbow.transformPoint({arm.foreLen * 0.33f, 0, 0}));
+    consider(elbow.transformPoint({arm.foreLen * 0.66f, 0, 0}));
+
+    // Wrist
+    Mat4 wristBase = elbow * Mat4::translation({arm.foreLen, 0.0f, 0.0f});
+    consider(wristBase.transformPoint({0.0f, 0.0f, 0.0f}));
+    Mat4 wrist = wristBase * Mat4::rotationX(arm.wristRoll);
+    consider(wrist.transformPoint({arm.wristLen * 0.50f, 0.0f, 0.0f}));
+
+    // Palm
+    Mat4 palmBase = wrist * Mat4::translation({arm.wristLen, 0.0f, 0.0f});
+    consider(palmBase.transformPoint({0.0f, 0.0f, 0.0f}));
+    consider(palmBase.transformPoint({arm.palmLen * 0.50f, 0.0f, 0.0f}));
+    Mat4 tip = palmBase * Mat4::translation({arm.palmLen, 0.0f, 0.0f});
+    consider(tip.transformPoint({0.0f, 0.0f, 0.0f}));
+
+    return minY;
+}
+
+static void enforceGroundConstraint(RobotArm& arm) {
+    // Ground plane used by drawGround() is y = 0.
+    constexpr float kGroundY = 0.0f;
+
+    // Conservative clearance so the boxes don't visually clip.
+    const float maxThickness = std::max(
+        std::max(arm.upperThickness, arm.foreThickness),
+        std::max(arm.palmThickness, std::max(arm.fingerThickness, arm.wristRadius * 1.3f))
+    );
+    const float clearance = 0.55f * maxThickness;
+
+    // Iteratively nudge shoulderPitch up until the arm clears the ground.
+    // This keeps control responsive while preventing "going through" the floor.
+    for (int i = 0; i < 40; ++i) {
+        float minY = computeArmMinCenterY(arm) - clearance;
+        if (minY >= kGroundY) break;
+
+        float penetration = (kGroundY - minY);
+        float stepDeg = math::clamp(penetration * 120.0f, 0.25f, 2.5f);
+
+        arm.shoulderPitch += stepDeg;
+        arm.shoulderPitch = math::clamp(arm.shoulderPitch, -60.0f, 95.0f);
+
+        // If we hit the joint limit, stop trying.
+        if (arm.shoulderPitch >= 95.0f - 1e-4f) break;
+    }
+}
+
 static void drawCylinder(float radius, float height, int slices = 24) {
     // Draw along +Y
     GLUquadric* q = gluNewQuadric();
@@ -42,7 +114,7 @@ void RobotArm::resetPose() {
     shoulderPitch = 25.0f;
     elbowPitch = 65.0f;
     wristRoll = 0.0f;
-    gripperOpen = 20.0f;
+    gripperOpen = 35.0f;
 }
 
 void RobotArm::update(float dt, const InputState& input) {
@@ -85,7 +157,12 @@ void RobotArm::update(float dt, const InputState& input) {
     shoulderPitch = math::clamp(shoulderPitch, -60.0f, 95.0f);
     elbowPitch = math::clamp(elbowPitch, 0.0f, 140.0f);
     wristRoll = math::clamp(wristRoll, -180.0f, 180.0f);
-    gripperOpen = math::clamp(gripperOpen, 0.0f, 35.0f);
+    // Allow going past fully-closed (0 deg) into negative angles.
+    // This gives a clear visual "X" when the user keeps squeezing past the limit.
+    gripperOpen = math::clamp(gripperOpen, -20.0f, 35.0f);
+
+    // Prevent the arm from intersecting the floor.
+    enforceGroundConstraint(*this);
 }
 
 math::Mat4 RobotArm::computePalmWorld() const {
@@ -214,7 +291,7 @@ void RobotArm::draw() const {
     // Left finger
     glPushMatrix();
     glTranslatef(palmLen * 0.95f, 0.0f, palmThickness * 0.65f);
-    glRotatef(fingerAngle, 0, 1, 0);
+    glRotatef(-fingerAngle, 0, 1, 0);
     glTranslatef(fingerLen * 0.5f, 0.0f, 0.0f);
     glScalef(fingerLen, fingerThickness, fingerThickness);
     glutSolidCube(1.0);
@@ -223,7 +300,7 @@ void RobotArm::draw() const {
     // Right finger
     glPushMatrix();
     glTranslatef(palmLen * 0.95f, 0.0f, -palmThickness * 0.65f);
-    glRotatef(-fingerAngle, 0, 1, 0);
+    glRotatef(fingerAngle, 0, 1, 0);
     glTranslatef(fingerLen * 0.5f, 0.0f, 0.0f);
     glScalef(fingerLen, fingerThickness, fingerThickness);
     glutSolidCube(1.0);

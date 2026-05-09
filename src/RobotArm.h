@@ -10,7 +10,11 @@ struct RobotArm {
     float shoulderPitch = 25.0f;
     float elbowPitch = 65.0f;
     float wristRoll = 0.0f;
-    float gripperOpen = 20.0f; // 0 = closed, higher = open
+    // Gripper finger angle (degrees):
+    //  > 0  => open "V"
+    //  = 0  => grabbing "| |"
+    //  < 0  => crossed "X" (over-squeezed past the limit)
+    float gripperOpen = 35.0f;
 
     // Dimensions
     float baseHeight = 0.35f;
