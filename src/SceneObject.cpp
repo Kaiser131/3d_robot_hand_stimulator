@@ -11,6 +11,12 @@ static void drawUnitCube() {
     glutSolidCube(1.0);
 }
 
+static void drawUnitTriangle() {
+    // A simple "triangle"-like 3D object.
+    // GLUT provides a solid tetrahedron which reads well as a triangular object.
+    glutSolidTetrahedron();
+}
+
 void drawSceneObject(const SceneObject& obj) {
     glPushMatrix();
     glMultMatrixf(obj.worldFromObject.m);
@@ -22,8 +28,20 @@ void drawSceneObject(const SceneObject& obj) {
     glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 30.0f);
 
     glPushMatrix();
-    glScalef(obj.radius * 2.0f, obj.radius * 2.0f, obj.radius * 2.0f);
-    drawUnitCube();
+    switch (obj.shape) {
+        case SceneObjectShape::Cube:
+            glScalef(obj.radius * 2.0f, obj.radius * 2.0f, obj.radius * 2.0f);
+            drawUnitCube();
+            break;
+        case SceneObjectShape::Triangle:
+            glScalef(obj.radius * 2.2f, obj.radius * 2.2f, obj.radius * 2.2f);
+            drawUnitTriangle();
+            break;
+        case SceneObjectShape::Round:
+            // Use radius directly for the sphere.
+            glutSolidSphere(obj.radius, 24, 18);
+            break;
+    }
     glPopMatrix();
 
     glPopMatrix();

@@ -74,10 +74,10 @@ static void enforceGroundConstraint(RobotArm& arm) {
         float stepDeg = math::clamp(penetration * 120.0f, 0.25f, 2.5f);
 
         arm.shoulderPitch += stepDeg;
-        arm.shoulderPitch = math::clamp(arm.shoulderPitch, -60.0f, 95.0f);
+        arm.shoulderPitch = math::clamp(arm.shoulderPitch, -140.0f, 140.0f);
 
         // If we hit the joint limit, stop trying.
-        if (arm.shoulderPitch >= 95.0f - 1e-4f) break;
+        if (arm.shoulderPitch >= 140.0f - 1e-4f) break;
     }
 }
 
@@ -150,12 +150,12 @@ void RobotArm::update(float dt, const InputState& input) {
     gripperOpen += gripDelta * dt;
 
     // Joint limits
-    // base unlimited-ish
-    if (baseYaw > 180.0f) baseYaw -= 360.0f;
-    if (baseYaw < -180.0f) baseYaw += 360.0f;
+    // base yaw: allow continuous rotation (no hard limits)
 
-    shoulderPitch = math::clamp(shoulderPitch, -60.0f, 95.0f);
-    elbowPitch = math::clamp(elbowPitch, 0.0f, 140.0f);
+    // Allow shoulder to bend further down/up.
+    shoulderPitch = math::clamp(shoulderPitch, -140.0f, 140.0f);
+    // Allow elbow to bend both ways so the arm can fold forward/backward symmetrically.
+    elbowPitch = math::clamp(elbowPitch, -140.0f, 140.0f);
     wristRoll = math::clamp(wristRoll, -180.0f, 180.0f);
     // Allow going past fully-closed (0 deg) into negative angles.
     // This gives a clear visual "X" when the user keeps squeezing past the limit.
@@ -198,8 +198,10 @@ math::Mat4 RobotArm::computePalmWorld() const {
 math::Vec3 RobotArm::computeGripperTipWorld() const {
     using namespace math;
     Mat4 palmWorld = computePalmWorld();
-    // Tip is at the end of the palm in local +X
-    return palmWorld.transformPoint({palmLen, 0.0f, 0.0f});
+    // Tip used for pickup: near the end of the fingers when the gripper is closed.
+    // Fingers are placed around ~palmLen*0.95 and extend along +X.
+    const float tipX = palmLen * 0.95f + fingerLen;
+    return palmWorld.transformPoint({tipX, 0.0f, 0.0f});
 }
 
 void RobotArm::draw() const {

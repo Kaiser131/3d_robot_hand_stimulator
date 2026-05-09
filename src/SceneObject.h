@@ -2,10 +2,18 @@
 
 #include "MathUtil.h"
 
+enum class SceneObjectShape {
+    Cube,
+    Triangle,
+    Round
+};
+
 struct SceneObject {
     // Pose in world space (rigid transform).
     math::Mat4 worldFromObject = math::Mat4::identity();
     bool held = false;
+
+    SceneObjectShape shape = SceneObjectShape::Cube;
 
     // If held, object pose is: gripperWorld * heldOffset
     math::Mat4 heldOffset = math::Mat4::identity();

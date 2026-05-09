@@ -25,6 +25,8 @@ static Camera gCamera;
 static InputState gInput;
 static RobotArm gArm;
 static SceneObject gObject;
+static SceneObject gTriangleObject;
+static SceneObject gRoundObject;
 
 static bool gShowInstructions = false;
 
@@ -44,6 +46,25 @@ static void mouseMotion(int x, int y);
 static void drawGround();
 static void updatePickup();
 static void drawInstructionsOverlay();
+
+static float distancePointToAabb(const math::Vec3& p, const math::Vec3& center, const math::Vec3& halfExtents);
+
+static float distancePointToSceneObject(const math::Vec3& p, const SceneObject& obj) {
+    // Approximate per-shape distance for pickup; good enough for interaction.
+    math::Vec3 c = obj.position();
+    switch (obj.shape) {
+        case SceneObjectShape::Cube: {
+            math::Vec3 halfExtents{obj.radius, obj.radius, obj.radius};
+            return distancePointToAabb(p, c, halfExtents);
+        }
+        case SceneObjectShape::Triangle:
+        case SceneObjectShape::Round: {
+            float d = math::length(p - c) - obj.radius;
+            return (d < 0.0f) ? 0.0f : d;
+        }
+    }
+    return 1e9f;
+}
 
 static float distancePointToAabb(const math::Vec3& p, const math::Vec3& center, const math::Vec3& halfExtents) {
     // Computes distance from point p to an axis-aligned box centered at center with halfExtents.
@@ -99,7 +120,18 @@ int main(int argc, char** argv) {
 
     // Place initial object on the ground
     gObject.radius = 0.12f;
-    gObject.worldFromObject = math::Mat4::translation({0.95f, gObject.radius, 0.35f});
+    gObject.shape = SceneObjectShape::Cube;
+    gObject.worldFromObject = math::Mat4::translation({1.45f, gObject.radius, 0.55f});
+
+    // Add a "triangle" object
+    gTriangleObject.radius = 0.12f;
+    gTriangleObject.shape = SceneObjectShape::Triangle;
+    gTriangleObject.worldFromObject = math::Mat4::translation({1.25f, gTriangleObject.radius, -0.55f});
+
+    // Add a "round" object
+    gRoundObject.radius = 0.12f;
+    gRoundObject.shape = SceneObjectShape::Round;
+    gRoundObject.worldFromObject = math::Mat4::translation({1.65f, gRoundObject.radius, 0.00f});
 
     glutMainLoop();
     return 0;
@@ -188,6 +220,8 @@ static void display() {
 
     // Object
     drawSceneObject(gObject);
+    drawSceneObject(gTriangleObject);
+    drawSceneObject(gRoundObject);
 
     if (gShowInstructions) {
         drawInstructionsOverlay();
@@ -226,6 +260,7 @@ static void drawInstructionsOverlay() {
 
     const std::vector<std::string> lines = {
         "Controls (press I to hide)",
+        "Objects: cube, triangle, round (grab any)",
         "", 
         "Robot joints:",
         "  Base yaw:      A / D",
@@ -266,48 +301,66 @@ static void updatePickup() {
     const float releaseThresholdDeg = 22.0f;  // open enough to drop
 
     math::Mat4 palmWorld = gArm.computePalmWorld();
-    // A frame at the gripper tip (end of the palm) so a held object moves with the tip.
-    math::Mat4 tipWorld = palmWorld * math::Mat4::translation({gArm.palmLen, 0.0f, 0.0f});
+    // A frame at the gripper "tip" used for pickup (near fingertip area).
+    const float tipX = gArm.palmLen * 0.95f + gArm.fingerLen;
+    math::Mat4 tipWorld = palmWorld * math::Mat4::translation({tipX, 0.0f, 0.0f});
     math::Vec3 tipPos = tipWorld.transformPoint({0.0f, 0.0f, 0.0f});
 
     const bool isClosing = (gInput.isDown('g') || gInput.isDown('G'));
 
-    if (!gObject.held) {
-        math::Vec3 objCenter = gObject.position();
-        math::Vec3 halfExtents{gObject.radius, gObject.radius, gObject.radius};
-        float distToCube = distancePointToAabb(tipPos, objCenter, halfExtents);
+    SceneObject* objects[] = {&gObject, &gTriangleObject, &gRoundObject};
 
-        if (isClosing && distToCube <= touchRadius) {
-            // Grab: compute held offset so object stays fixed relative to the gripper tip.
-            math::Mat4 invTip = math::Mat4::inverseRigidBody(tipWorld);
-            gObject.heldOffset = invTip * gObject.worldFromObject;
-            gObject.held = true;
+    SceneObject* heldObj = nullptr;
+    for (SceneObject* o : objects) {
+        if (o->held) {
+            heldObj = o;
+            break;
+        }
+    }
 
-            // Visual: when we successfully grab something, show the parallel "| |" pose.
-            // Users can keep squeezing (key 'G') to go past the limit into the crossed "X" pose.
-            gArm.gripperOpen = 0.0f;
+    if (heldObj == nullptr) {
+        // Try to grab the closest object within touch radius.
+        if (isClosing) {
+            SceneObject* bestObj = nullptr;
+            float bestDist = 1e9f;
+            for (SceneObject* o : objects) {
+                float d = distancePointToSceneObject(tipPos, *o);
+                if (d <= touchRadius && d < bestDist) {
+                    bestDist = d;
+                    bestObj = o;
+                }
+            }
+
+            if (bestObj) {
+                math::Mat4 invTip = math::Mat4::inverseRigidBody(tipWorld);
+                bestObj->heldOffset = invTip * bestObj->worldFromObject;
+                bestObj->held = true;
+
+                // Visual grabbing pose "| |".
+                gArm.gripperOpen = 0.0f;
+            }
         }
     } else {
         // Release on opening.
         const bool isOpening = (gInput.isDown('t') || gInput.isDown('T'));
         if (isOpening || gArm.gripperOpen >= releaseThresholdDeg) {
-            gObject.held = false;
+            heldObj->held = false;
 
-            // Default state is open "V".
-            // Keep it at least slightly open after release, but don't force-close
-            // if the user already opened wider.
+            // Default state is open "V" after release.
             gArm.gripperOpen = std::max(gArm.gripperOpen, 35.0f);
         }
     }
 
-    if (gObject.held) {
-        gObject.worldFromObject = tipWorld * gObject.heldOffset;
+    // Update held object pose.
+    for (SceneObject* o : objects) {
+        if (!o->held) continue;
+        o->worldFromObject = tipWorld * o->heldOffset;
 
         // Keep object above ground (simple floor constraint)
-        math::Vec3 pos = gObject.position();
-        float minY = gObject.radius;
+        math::Vec3 pos = o->position();
+        float minY = o->radius;
         if (pos.y < minY) {
-            gObject.worldFromObject.m[13] = minY;
+            o->worldFromObject.m[13] = minY;
         }
     }
 }
@@ -346,6 +399,8 @@ static void keyboardDown(unsigned char key, int, int) {
     if (key == 'x' || key == 'X') {
         gArm.resetPose();
         if (gObject.held) gObject.held = false;
+        if (gTriangleObject.held) gTriangleObject.held = false;
+        if (gRoundObject.held) gRoundObject.held = false;
     }
 }
 
