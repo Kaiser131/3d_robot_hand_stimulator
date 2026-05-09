@@ -1,0 +1,53 @@
+# depslib dependency file v1.0
+1778341431 source:c:\projects\glut\robot_arm_stimulation\src\inputstate.cpp
+	"InputState.h"
+
+1778341431 c:\projects\glut\robot_arm_stimulation\src\inputstate.h
+	<array>
+
+1778342627 source:c:\projects\glut\robot_arm_stimulation\src\camera.cpp
+	"Camera.h"
+	"InputState.h"
+	<Windows.h>
+	<GL/glut.h>
+	<GL/glu.h>
+
+1778342627 c:\projects\glut\robot_arm_stimulation\src\camera.h
+	"MathUtil.h"
+
+1778341432 c:\projects\glut\robot_arm_stimulation\src\mathutil.h
+	<cmath>
+
+1778342627 source:c:\projects\glut\robot_arm_stimulation\src\main.cpp
+	<Windows.h>
+	<chrono>
+	<cstdlib>
+	<GL/glut.h>
+	<GL/glu.h>
+	"Camera.h"
+	"InputState.h"
+	"RobotArm.h"
+	"SceneObject.h"
+	"MathUtil.h"
+
+1778341432 c:\projects\glut\robot_arm_stimulation\src\robotarm.h
+	"MathUtil.h"
+
+1778341432 c:\projects\glut\robot_arm_stimulation\src\sceneobject.h
+	"MathUtil.h"
+
+1778341432 source:c:\projects\glut\robot_arm_stimulation\src\mathutil.cpp
+	"MathUtil.h"
+
+1778343252 source:c:\projects\glut\robot_arm_stimulation\src\robotarm.cpp
+	"RobotArm.h"
+	"InputState.h"
+	<Windows.h>
+	<GL/glut.h>
+	<GL/glu.h>
+
+1778341432 source:c:\projects\glut\robot_arm_stimulation\src\sceneobject.cpp
+	"SceneObject.h"
+	<Windows.h>
+	<GL/glut.h>
+
